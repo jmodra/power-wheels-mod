@@ -177,7 +177,7 @@
 </div>
 
 <script>
-// ---------------- BLE identifiers ----------------
+// ---------------- BLE identifiers (must match the ESP32 sketch) ----------------
 const DEVICE_NAME       = "PowerWheels-Ctrl";
 const SERVICE_UUID      = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const SPEED_CHAR_UUID   = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -191,7 +191,7 @@ const NORMAL_MAX_DUTY_PERCENT = 67.0;
 const TURBO_MAX_DUTY_PERCENT  = 100.0;
 const GAUGE_MAX = 150;
 const BATTERY_V = 18.0;
-const REFRESH_MS = 150; 
+const REFRESH_MS = 150; // must beat firmware's 400ms turbo/drift watchdogs
 const BATT_BAR_MIN = 14.0, BATT_BAR_MAX = 21.0;
 
 function estimateVoltage(percent, turboOn) {
@@ -205,7 +205,12 @@ function estimateVoltage(percent, turboOn) {
 let bleDevice, speedChar, runChar, statusChar, turboChar, driftChar, driftConfigChar;
 let gaugePercent = 0, running = false;
 let lastLocalActionMs = 0;
-const LOCAL_ACTION_GRACE_MS = 1200;
+const LOCAL_ACTION_GRACE_MS = 500;
+let desiredRunning = false;
+let runRetryTimer = null;
+let runRetryAttempts = 0;
+const RUN_RETRY_INTERVAL_MS = 300;
+const RUN_RETRY_MAX_ATTEMPTS = 6;
 let turboActiveConfirmed = false, driftActiveConfirmed = false;
 let turboSources = { toggle: false, button: false };
 let driftSources = { toggle: false, button: false };
@@ -221,21 +226,6 @@ const startBtn = el('startBtn');
 const turboBtn = el('turboBtn'), turboToggle = el('turboToggle');
 const driftBtn = el('driftBtn'), driftToggle = el('driftToggle');
 const battVolts = el('battVolts'), battFill = el('battFill'), battMsg = el('battMsg');
-
-// ---------------- Sequential BLE Queue ----------------
-let bleQueue = Promise.resolve();
-
-function enqueueWrite(characteristic, payload) {
-  if (!characteristic) return Promise.resolve();
-  bleQueue = bleQueue.then(async () => {
-    try {
-      await characteristic.writeValue(payload);
-    } catch (err) {
-      console.warn("BLE write issue:", err);
-    }
-  }).catch(() => {});
-  return bleQueue;
-}
 
 // ---------------- Gauge ----------------
 const NORMAL_STEPS = 20, TURBO_STEPS = 10;
@@ -292,7 +282,7 @@ el('gaugeSvg').addEventListener('pointerdown', (e) => { dragging = true; handleD
 window.addEventListener('pointermove', (e) => { if (dragging) handleDrag(e); });
 window.addEventListener('pointerup', () => { dragging = false; });
 function handleDrag(e) { const deg = angleFromPointer(e); setGauge(Math.round((deg / 180) * GAUGE_MAX / 5) * 5); }
-function setGauge(pct) { gaugePercent = Math.max(0, Math.min(GAUGE_MAX, pct)); updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed); sendSpeed(); }
+function setGauge(pct) { gaugePercent = Math.max(0, Math.min(GAUGE_MAX, pct)); lastLocalActionMs = Date.now(); updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed); sendSpeed(); }
 el('incBtn').addEventListener('click', () => setGauge(gaugePercent + 5));
 el('decBtn').addEventListener('click', () => setGauge(gaugePercent - 5));
 
@@ -329,14 +319,14 @@ document.querySelectorAll('.mini-btn').forEach(btn => {
     sendDriftConfig();
   });
 });
-function sendDriftConfig() {
-  lastLocalActionMs = Date.now();
+async function sendDriftConfig() {
+  if (!driftConfigChar) return;
   const buf = new Uint8Array([
     (driftConfig.onMs >> 8) & 0xFF, driftConfig.onMs & 0xFF,
     (driftConfig.offMs >> 8) & 0xFF, driftConfig.offMs & 0xFF,
     driftConfig.onPct, driftConfig.offPct
   ]);
-  return enqueueWrite(driftConfigChar, buf);
+  try { await driftConfigChar.writeValue(buf); } catch (e) {}
 }
 
 // ---------------- BLE ----------------
@@ -407,14 +397,29 @@ function handleStatusValue(dataView) {
   const mv = (dataView.getUint8(2) << 8) | dataView.getUint8(3);
   const volts = mv / 1000;
 
+  // Battery status is never locally-optimistic - always trust it immediately.
   updateBatteryUI(volts, lowFlag, cutoffFlag);
 
+  // For fields the user just controlled (run/gauge/turbo/drift), a status
+  // broadcast that arrived shortly after our own write might reflect a
+  // snapshot taken before that write was processed. Ignore it during the
+  // grace window so a stale echo can't snap the UI back - after the
+  // window, trust the firmware fully (e.g. to reflect a watchdog stop).
   const withinGrace = (Date.now() - lastLocalActionMs) < LOCAL_ACTION_GRACE_MS;
   if (!withinGrace) {
     running = notifyRunning;
     turboActiveConfirmed = notifyTurbo;
     driftActiveConfirmed = notifyDrift;
     gaugePercent = notifyPercent;
+    // Firmware's own state is authoritative once trusted - sync our
+    // "desired" tracking to it. This clears any pending retry once the
+    // ESP32 confirms it got the command, and also correctly stops us
+    // from fighting a legitimate watchdog-forced stop.
+    desiredRunning = notifyRunning;
+  }
+  if (notifyRunning === desiredRunning && runRetryTimer) {
+    clearInterval(runRetryTimer);
+    runRetryTimer = null;
   }
 
   updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed);
@@ -435,10 +440,35 @@ function handleDriftConfigValue(dataView) {
   refreshDriftConfigUI();
 }
 
-function sendSpeed() { lastLocalActionMs = Date.now(); return enqueueWrite(speedChar, new Uint8Array([gaugePercent])); }
-function sendRun(state) { lastLocalActionMs = Date.now(); return enqueueWrite(runChar, new Uint8Array([state ? 1 : 0])); }
-function sendTurbo(state) { lastLocalActionMs = Date.now(); return enqueueWrite(turboChar, new Uint8Array([state ? 1 : 0])); }
-function sendDrift(state) { lastLocalActionMs = Date.now(); return enqueueWrite(driftChar, new Uint8Array([state ? 1 : 0])); }
+async function sendSpeed() { if (!speedChar) return; try { await speedChar.writeValue(new Uint8Array([gaugePercent])); } catch (e) {} }
+async function sendRun(state) { lastLocalActionMs = Date.now(); if (!runChar) return; try { await runChar.writeValue(new Uint8Array([state ? 1 : 0])); } catch (e) {} }
+async function sendTurbo(state) { lastLocalActionMs = Date.now(); if (!turboChar) return; try { await turboChar.writeValue(new Uint8Array([state ? 1 : 0])); } catch (e) {} }
+async function sendDrift(state) { lastLocalActionMs = Date.now(); if (!driftChar) return; try { await driftChar.writeValue(new Uint8Array([state ? 1 : 0])); } catch (e) {} }
+
+// Start/Stop is a one-shot press, unlike speed/turbo/drift which get
+// continuously re-sent by the heartbeat. If a single write silently
+// fails (dropped packet, timing hiccup), nothing would ever retry it -
+// so this keeps resending until the firmware actually confirms the
+// state via a status notification, or we give up after a few tries.
+function requestRunState(state) {
+  desiredRunning = state;
+  running = state; // optimistic UI
+  lastLocalActionMs = Date.now();
+  setRunUI(state);
+  sendRun(state);
+
+  runRetryAttempts = 0;
+  if (runRetryTimer) clearInterval(runRetryTimer);
+  runRetryTimer = setInterval(() => {
+    runRetryAttempts++;
+    if (runRetryAttempts > RUN_RETRY_MAX_ATTEMPTS) {
+      clearInterval(runRetryTimer);
+      runRetryTimer = null;
+      return;
+    }
+    sendRun(desiredRunning);
+  }, RUN_RETRY_INTERVAL_MS);
+}
 
 function startHeartbeat() { if (!heartbeatTimer) heartbeatTimer = setInterval(sendSpeed, 500); }
 
@@ -457,6 +487,8 @@ function setRunUI(isRunning) {
   }
 }
 
+// Toggle and hold-button both just request/release the same underlying
+// signal per modifier - whichever is active keeps it refreshed.
 function updateTurboRequest() {
   const want = turboSources.toggle || turboSources.button;
   if (want && !turboRefreshTimer) { sendTurbo(true); turboRefreshTimer = setInterval(() => sendTurbo(true), REFRESH_MS); }
@@ -496,8 +528,8 @@ driftBtn.addEventListener('pointerup', driftPressEnd);
 driftBtn.addEventListener('pointerleave', driftPressEnd);
 driftBtn.addEventListener('pointercancel', driftPressEnd);
 
-startBtn.addEventListener('click', async () => { setRunUI(true); await sendRun(true); });
-el('stopBtn').addEventListener('click', async () => { setRunUI(false); await sendRun(false); });
+startBtn.addEventListener('click', () => requestRunState(true));
+el('stopBtn').addEventListener('click', () => requestRunState(false));
 
 el('connectBtn').addEventListener('click', connectBLE);
 refreshDriftConfigUI();
