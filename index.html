@@ -1,192 +1,195 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Power Wheels Control</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0b0d10; --panel: #14171b; --panel-2: #1b1f24; --line: #262b31;
-    --text: #e8ebee; --muted: #8b95a1; --amber: #ff8a3d; --green: #3ddc84;
-    --red: #e63946; --drift: #a78bfa;
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overscroll-behavior: none; user-select: none; }
-  .screen { min-height: 100vh; display: flex; flex-direction: column; padding: 14px 16px 20px; }
-  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 10px; }
-  .brand { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
-  .status { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); transition: background .2s, box-shadow .2s; }
-  .dot.connected { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Power Wheels Control Panel</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #ff8a3d;
+      --red: #e63946;
+      --amber: #f59e0b;
+      --green: #10b981;
+      --purple: #a78bfa;
+    }
 
-  .connect-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 20px; }
-  .connect-wrap h1 { font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 800; margin: 0; }
-  .connect-wrap p { color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 320px; margin: 0; }
-  .btn-connect { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 16px; color: #0b0d10; background: var(--amber); border: none; border-radius: 14px; padding: 16px 32px; box-shadow: 0 0 24px rgba(255,138,61,0.25); cursor: pointer; }
-  .btn-connect:active { transform: scale(0.98); }
-  .error-box { border: 1px solid var(--red); background: rgba(230,57,70,0.08); border-radius: 10px; padding: 14px 16px; font-size: 13px; color: #ff9ba3; max-width: 340px; text-align: left; line-height: 1.5; display: none; }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 16px; }
 
-  .control-wrap { display: none; flex: 1; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; }
+    .container { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; align-items: center; }
 
-  .battery-panel { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; margin-bottom: 4px; }
-  .battery-row { display: flex; align-items: center; justify-content: space-between; }
-  .battery-label { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted); letter-spacing: 0.1em; }
-  .battery-volts { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
-  .battery-track { width: 100%; height: 6px; border-radius: 3px; background: #21262c; margin-top: 6px; overflow: hidden; }
-  .battery-fill { height: 100%; border-radius: 3px; background: var(--green); width: 60%; transition: width .3s, background .3s; }
-  .battery-msg { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; margin-top: 4px; color: var(--muted); }
+    /* Status Bar */
+    .status-bar { display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: 14px; font-weight: 600; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); display: inline-block; margin-right: 6px; }
+    .dot.connected { background: var(--green); box-shadow: 0 0 8px var(--green); }
 
-  .gauge-wrap { position: relative; width: min(230px, 62vw); margin-top: 2px; touch-action: none; }
-  .gauge-readout { position: absolute; left: 0; right: 0; bottom: 12%; text-align: center; }
-  .gauge-value { font-family: 'Orbitron', sans-serif; font-size: 32px; font-weight: 800; line-height: 1; color: var(--amber); text-shadow: 0 0 24px rgba(255,138,61,0.35); }
-  .gauge-value.turbo { color: var(--red); text-shadow: 0 0 24px rgba(230,57,70,0.45); }
-  .gauge-value.drift { color: var(--drift); text-shadow: 0 0 24px rgba(167,139,250,0.5); }
-  .gauge-volts { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted); margin-top: 1px; }
-  .gauge-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--muted); letter-spacing: 0.15em; margin-top: 2px; }
+    /* Buttons */
+    .btn { background: #21262d; border: 1px solid var(--border); color: var(--text); padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; text-align: center; width: 100%; transition: all 0.1s ease; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+    .btn-primary.active { background: #da3633; border-color: #f85149; }
+    .btn-stop { background: #da3633; border-color: #f85149; color: #fff; font-size: 18px; padding: 16px; }
+    
+    .hold-btn { background: #21262d; border: 2px solid var(--border); color: var(--text); padding: 16px; border-radius: 8px; font-size: 16px; font-weight: 700; width: 100%; text-align: center; touch-action: manipulation; }
+    .hold-btn.engaged { background: var(--accent); color: #000; border-color: var(--accent); }
+    .hold-btn.drift-mode.engaged { background: var(--purple); color: #000; border-color: var(--purple); }
 
-  .step-controls { display: flex; align-items: center; gap: 12px; margin-top: -4px; }
-  .step-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-  .step-btn:active { background: var(--panel); }
-  .step-caption { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); min-width: 90px; text-align: center; }
+    /* Gauge */
+    .gauge-container { position: relative; width: 100%; max-width: 320px; height: 200px; display: flex; justify-content: center; }
+    svg { width: 100%; height: 100%; overflow: visible; }
+    .gauge-readout { position: absolute; bottom: 10px; text-align: center; }
+    .gauge-val { font-size: 42px; font-weight: 800; color: #fff; line-height: 1; }
+    .gauge-val.turbo { color: var(--red); }
+    .gauge-val.drift { color: var(--purple); }
+    .gauge-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
 
-  .modifier-row { display: flex; gap: 8px; width: 100%; max-width: 380px; margin-top: 10px; }
-  .toggle-wrap { flex: 1; display: flex; align-items: center; justify-content: space-between; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 0 10px; }
-  .toggle-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--muted); line-height: 1.25; }
-  .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .switch-track { position: absolute; inset: 0; background: #2a2f36; border-radius: 999px; transition: background .2s; cursor: pointer; }
-  .switch-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
-  .switch.turbo input:checked + .switch-track { background: #4a1418; }
-  .switch.turbo input:checked + .switch-track .switch-thumb { transform: translateX(18px); background: var(--red); }
-  .switch.drift input:checked + .switch-track { background: #2e2350; }
-  .switch.drift input:checked + .switch-track .switch-thumb { transform: translateX(18px); background: var(--drift); }
-  .switch input:disabled + .switch-track { opacity: 0.35; cursor: not-allowed; }
+    /* Battery Bar */
+    .batt-container { width: 100%; }
+    .batt-header { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+    .batt-track { width: 100%; height: 12px; background: #21262d; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+    .batt-fill { height: 100%; width: 0%; background: var(--green); transition: width 0.3s ease, background 0.3s ease; }
 
-  .hold-btn { flex: 0.85; border-radius: 12px; border: 2px solid; background: var(--panel-2); font-family: 'Orbitron', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.04em; text-align: center; padding: 0 4px; cursor: pointer; touch-action: none; }
-  .hold-btn.turbo { border-color: #4a2418; color: var(--red); }
-  .hold-btn.turbo.engaged { background: var(--red); color: #2a0508; box-shadow: 0 0 24px rgba(230,57,70,0.5); }
-  .hold-btn.drift { border-color: #3a2e5c; color: var(--drift); }
-  .hold-btn.drift.engaged { background: var(--drift); color: #1a0f33; box-shadow: 0 0 24px rgba(167,139,250,0.5); }
-  .hold-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    /* Controls Grid */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    .grid-btns { display: flex; gap: 8px; width: 100%; }
+    
+    /* Toggle Switch */
+    .switch-row { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 0; }
+    .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #21262d; transition: .2s; border-radius: 24px; border: 1px solid var(--border); }
+    .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(20px); }
 
-  .drift-config { width: 100%; max-width: 380px; margin-top: 10px; background: var(--panel); border: 1px solid #2e2447; border-radius: 12px; padding: 10px 12px; }
-  .drift-config-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--drift); letter-spacing: 0.1em; margin-bottom: 8px; }
-  .drift-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .drift-stat { background: var(--panel-2); border-radius: 10px; padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; }
-  .drift-stat-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted); }
-  .drift-stat-value { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: var(--text); min-width: 44px; text-align: center; }
-  .mini-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); background: #10131a; color: var(--text); font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-  .mini-btn:active { background: #05070a; }
+    /* Config Controls */
+    .config-group { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 8px; font-size: 12px; }
+    .config-row { display: flex; justify-content: space-between; align-items: center; }
+    .mini-btn { background: #21262d; border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; }
 
-  .action-row { display: flex; gap: 10px; width: 100%; max-width: 380px; margin-top: auto; padding-top: 14px; }
-  .btn-action { flex: 1; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 15px; border-radius: 14px; padding: 14px 0; border: none; cursor: pointer; }
-  .btn-start { background: var(--green); color: #06251a; }
-  .btn-start.active { background: var(--panel-2); color: var(--green); border: 1px solid var(--green); }
-  .btn-stop { background: var(--red); color: #2a0508; }
-  .btn-action:active { transform: scale(0.98); }
-</style>
+    #errorBox { display: none; background: rgba(218, 54, 51, 0.2); border: 1px solid var(--red); color: #ff7b72; padding: 12px; border-radius: 8px; width: 100%; font-size: 13px; text-align: center; }
+  </style>
 </head>
 <body>
-<div class="screen">
 
-  <div class="topbar">
-    <div class="brand">Power&nbsp;Wheels&nbsp;Ctrl</div>
-    <div class="status"><span id="statusText">Disconnected</span><span class="dot" id="statusDot"></span></div>
+<div class="container">
+  <!-- Header / Connection -->
+  <div class="card">
+    <div class="status-bar">
+      <div><span id="statusDot" class="dot"></span><span id="statusText">Disconnected</span></div>
+      <div id="battMsg" style="font-size: 12px; color: var(--text-muted);">--</div>
+    </div>
   </div>
 
-  <div class="connect-wrap" id="connectView">
-    <h1>Connect to the car</h1>
-    <p>Pairs directly over Bluetooth. Make sure the ESP32 is powered on and nearby.</p>
-    <button class="btn-connect" id="connectBtn">Connect via Bluetooth</button>
-    <div class="error-box" id="errorBox"></div>
+  <div id="errorBox"></div>
+
+  <!-- Connect View -->
+  <div id="connectView" class="card">
+    <button id="connectBtn" class="btn btn-primary">Connect Vehicle</button>
   </div>
 
-  <div class="control-wrap" id="controlView">
-
-    <div class="battery-panel">
-      <div class="battery-row"><span class="battery-label">RYOBI 18V PACK</span><span class="battery-volts" id="battVolts">--.-V</span></div>
-      <div class="battery-track"><div class="battery-fill" id="battFill"></div></div>
-      <div class="battery-msg" id="battMsg">Reading...</div>
+  <!-- Main Control View -->
+  <div id="controlView" class="card" style="display: none; gap: 16px;">
+    
+    <!-- Battery Level -->
+    <div class="batt-container">
+      <div class="batt-header">
+        <span>Battery</span>
+        <span id="battVolts">--.-V</span>
+      </div>
+      <div class="batt-track">
+        <div id="battFill" class="batt-fill"></div>
+      </div>
     </div>
 
-    <div class="gauge-wrap">
-      <svg id="gaugeSvg" viewBox="0 0 320 200" width="100%"></svg>
+    <!-- Speed Gauge -->
+    <div class="gauge-container">
+      <svg id="gaugeSvg" viewBox="0 0 320 200"></svg>
       <div class="gauge-readout">
-        <div class="gauge-value" id="gaugeValue">0%</div>
-        <div class="gauge-volts" id="gaugeVolts">≈0.0V</div>
-        <div class="gauge-label">THROTTLE</div>
+        <div id="gaugeValue" class="gauge-val">0%</div>
+        <div id="gaugeVolts" class="gauge-sub">≈0.0V</div>
       </div>
     </div>
 
-    <div class="step-controls">
-      <button class="step-btn" id="decBtn">−</button>
-      <div class="step-caption">5% steps · 0-150</div>
-      <button class="step-btn" id="incBtn">+</button>
+    <!-- Direct Gauge Nudge -->
+    <div class="grid-btns">
+      <button id="decBtn" class="btn">-5%</button>
+      <button id="incBtn" class="btn">+5%</button>
     </div>
 
-    <div class="modifier-row">
-      <div class="toggle-wrap">
-        <span class="toggle-label">TURBO<br>ALWAYS ON</span>
-        <label class="switch turbo"><input type="checkbox" id="turboToggle"><span class="switch-track"><span class="switch-thumb"></span></span></label>
+    <!-- Start / Stop -->
+    <div class="grid-2">
+      <button id="startBtn" class="btn btn-primary">START</button>
+      <button id="stopBtn" class="btn btn-stop">STOP</button>
+    </div>
+
+    <!-- Turbo Panel -->
+    <div style="width: 100%; border-top: 1px solid var(--border); padding-top: 12px;">
+      <div class="switch-row">
+        <span style="font-weight: 600;">Turbo Lock</span>
+        <label class="switch">
+          <input type="checkbox" id="turboToggle">
+          <span class="slider"></span>
+        </label>
       </div>
-      <button class="hold-btn turbo" id="turboBtn">HOLD<br>BOOST</button>
+      <button id="turboBtn" class="hold-btn" style="margin-top: 8px;">HOLD FOR TURBO</button>
     </div>
 
-    <div class="modifier-row">
-      <div class="toggle-wrap">
-        <span class="toggle-label">DRIFT<br>ALWAYS ON</span>
-        <label class="switch drift"><input type="checkbox" id="driftToggle"><span class="switch-track"><span class="switch-thumb"></span></span></label>
+    <!-- Drift Panel -->
+    <div style="width: 100%; border-top: 1px solid var(--border); padding-top: 12px;">
+      <div class="switch-row">
+        <span style="font-weight: 600;">Drift Pulse Lock</span>
+        <label class="switch">
+          <input type="checkbox" id="driftToggle">
+          <span class="slider"></span>
+        </label>
       </div>
-      <button class="hold-btn drift" id="driftBtn">HOLD<br>DRIFT</button>
-    </div>
+      <button id="driftBtn" class="hold-btn drift-mode" style="margin-top: 8px;">HOLD FOR DRIFT</button>
 
-    <div class="drift-config">
-      <div class="drift-config-title">DRIFT PULSE SETTINGS</div>
-      <div class="drift-grid">
-        <div class="drift-stat">
-          <button class="mini-btn" data-adj="onMs" data-delta="-25">−</button>
-          <div><div class="drift-stat-value" id="onMsVal">150</div><div class="drift-stat-label">ON ms</div></div>
-          <button class="mini-btn" data-adj="onMs" data-delta="25">+</button>
+      <!-- Drift Tuning -->
+      <div class="config-group">
+        <div class="config-row">
+          <span>Pulse ON Time: <strong id="onMsVal">150</strong>ms</span>
+          <div>
+            <button class="mini-btn" data-adj="onMs" data-delta="-25">-</button>
+            <button class="mini-btn" data-adj="onMs" data-delta="25">+</button>
+          </div>
         </div>
-        <div class="drift-stat">
-          <button class="mini-btn" data-adj="offMs" data-delta="-25">−</button>
-          <div><div class="drift-stat-value" id="offMsVal">150</div><div class="drift-stat-label">OFF ms</div></div>
-          <button class="mini-btn" data-adj="offMs" data-delta="25">+</button>
+        <div class="config-row">
+          <span>Pulse OFF Time: <strong id="offMsVal">150</strong>ms</span>
+          <div>
+            <button class="mini-btn" data-adj="offMs" data-delta="-25">-</button>
+            <button class="mini-btn" data-adj="offMs" data-delta="25">+</button>
+          </div>
         </div>
-        <div class="drift-stat">
-          <button class="mini-btn" data-adj="onPct" data-delta="-5">−</button>
-          <div><div class="drift-stat-value" id="onPctVal">100%</div><div class="drift-stat-label">ON throttle</div></div>
-          <button class="mini-btn" data-adj="onPct" data-delta="5">+</button>
+        <div class="config-row">
+          <span>ON Power: <strong id="onPctVal">100</strong>%</span>
+          <div>
+            <button class="mini-btn" data-adj="onPct" data-delta="-5">-</button>
+            <button class="mini-btn" data-adj="onPct" data-delta="5">+</button>
+          </div>
         </div>
-        <div class="drift-stat">
-          <button class="mini-btn" data-adj="offPct" data-delta="-5">−</button>
-          <div><div class="drift-stat-value" id="offPctVal">80%</div><div class="drift-stat-label">OFF throttle</div></div>
-          <button class="mini-btn" data-adj="offPct" data-delta="5">+</button>
+        <div class="config-row">
+          <span>OFF Power: <strong id="offPctVal">80</strong>%</span>
+          <div>
+            <button class="mini-btn" data-adj="offPct" data-delta="-5">-</button>
+            <button class="mini-btn" data-adj="offPct" data-delta="5">+</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="action-row">
-      <button class="btn-action btn-start" id="startBtn">START</button>
-      <button class="btn-action btn-stop" id="stopBtn">STOP</button>
-    </div>
   </div>
-
 </div>
 
 <script>
-// Global Error Catch to reveal any silent initialization crashes
-window.onerror = function(msg, url, line) {
-  const err = document.getElementById('errorBox');
-  if (err) {
-    err.textContent = "JS Error Line " + line + ": " + msg;
-    err.style.display = 'block';
-  }
-};
-
-// BLE UUID Constants
+// BLE Config
 const DEVICE_NAME       = "PowerWheels-Ctrl";
 const SERVICE_UUID      = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const SPEED_CHAR_UUID   = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -196,20 +199,10 @@ const TURBO_CHAR_UUID   = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
 const DRIFT_CHAR_UUID   = "6e400006-b5a3-f393-e0a9-e50e24dcca9e";
 const DRIFT_CONFIG_UUID = "6e400007-b5a3-f393-e0a9-e50e24dcca9e";
 
-const NORMAL_MAX_DUTY_PERCENT = 67.0;
-const TURBO_MAX_DUTY_PERCENT  = 100.0;
 const GAUGE_MAX = 150;
 const BATTERY_V = 18.0;
 const REFRESH_MS = 150; 
 const BATT_BAR_MIN = 14.0, BATT_BAR_MAX = 21.0;
-
-function estimateVoltage(percent, turboOn) {
-  let effective = percent > 100 ? (turboOn ? percent : 100) : percent;
-  let dutyPct;
-  if (effective <= 100) dutyPct = (effective / 100) * NORMAL_MAX_DUTY_PERCENT;
-  else { const frac = (effective - 100) / (GAUGE_MAX - 100); dutyPct = NORMAL_MAX_DUTY_PERCENT + frac * (TURBO_MAX_DUTY_PERCENT - NORMAL_MAX_DUTY_PERCENT); }
-  return (dutyPct / 100) * BATTERY_V;
-}
 
 let bleDevice, speedChar, runChar, statusChar, turboChar, driftChar, driftConfigChar;
 let gaugePercent = 0, running = false;
@@ -223,7 +216,7 @@ let turboRefreshTimer = null, driftRefreshTimer = null;
 
 let driftConfig = { onMs: 150, offMs: 150, onPct: 100, offPct: 80 };
 
-// Asynchronous BLE Write Queue
+// Queue BLE writes to prevent GATT overload
 let bleQueue = Promise.resolve();
 function enqueueWrite(characteristic, payload) {
   if (!characteristic) return Promise.resolve();
@@ -231,7 +224,7 @@ function enqueueWrite(characteristic, payload) {
     try {
       await characteristic.writeValue(payload);
     } catch (err) {
-      console.warn("BLE Write failed:", err);
+      console.warn("BLE Write error:", err);
     }
   }).catch(() => {});
   return bleQueue;
@@ -246,10 +239,15 @@ const turboBtn = el('turboBtn'), turboToggle = el('turboToggle');
 const driftBtn = el('driftBtn'), driftToggle = el('driftToggle');
 const battVolts = el('battVolts'), battFill = el('battFill'), battMsg = el('battMsg');
 
-// Gauge SVG rendering
+function calculateVoltage(percent) {
+  return (percent / 100.0) * BATTERY_V;
+}
+
+// Gauge SVG Rendering
 const NORMAL_STEPS = 20, TURBO_STEPS = 10;
 function polar(cx, cy, r, angleDeg) { const a = (angleDeg - 180) * Math.PI / 180; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; }
 function pctToAngle(pct) { return (pct / GAUGE_MAX) * 180; }
+
 function buildGauge() {
   const svg = el('gaugeSvg'); const cx = 160, cy = 175, rOuter = 140;
   let html = '';
@@ -286,7 +284,9 @@ function updateGauge(percent, turboOn, driftOn) {
   gaugeValue.textContent = percent + '%';
   gaugeValue.classList.toggle('turbo', percent > 100 && !driftOn);
   gaugeValue.classList.toggle('drift', driftOn);
-  gaugeVolts.textContent = driftOn ? 'pulsing' : ('≈' + estimateVoltage(percent, turboOn).toFixed(1) + 'V');
+  
+  const estV = calculateVoltage(percent);
+  gaugeVolts.textContent = driftOn ? 'pulsing' : ('≈' + estV.toFixed(1) + 'V');
 }
 
 buildGauge(); 
@@ -314,7 +314,7 @@ function updateBatteryUI(volts, lowFlag, cutoffFlag) {
   battFill.style.width = pct + '%';
   if (cutoffFlag) { battFill.style.background = 'var(--red)'; battMsg.textContent = 'CRITICAL — stopped to protect pack'; battMsg.style.color = 'var(--red)'; }
   else if (lowFlag) { battFill.style.background = 'var(--amber)'; battMsg.textContent = 'LOW — turbo & drift locked out'; battMsg.style.color = 'var(--amber)'; }
-  else { battFill.style.background = 'var(--green)'; battMsg.textContent = 'OK'; battMsg.style.color = 'var(--muted)'; }
+  else { battFill.style.background = 'var(--green)'; battMsg.textContent = 'OK'; battMsg.style.color = 'var(--text-muted)'; }
 
   turboBtn.disabled = !running || lowFlag;
   turboToggle.disabled = !running || lowFlag;
@@ -325,8 +325,8 @@ function updateBatteryUI(volts, lowFlag, cutoffFlag) {
 function refreshDriftConfigUI() {
   el('onMsVal').textContent = driftConfig.onMs;
   el('offMsVal').textContent = driftConfig.offMs;
-  el('onPctVal').textContent = driftConfig.onPct + '%';
-  el('offPctVal').textContent = driftConfig.offPct + '%';
+  el('onPctVal').textContent = driftConfig.onPct;
+  el('offPctVal').textContent = driftConfig.offPct;
 }
 
 document.querySelectorAll('.mini-btn').forEach(function(btn) {
@@ -396,15 +396,25 @@ function sendDriftConfig() {
   return enqueueWrite(driftConfigChar, buf);
 }
 
-startBtn.addEventListener('click', function() { running = !running; sendRun(running); startBtn.textContent = running ? 'RUNNING' : 'START'; startBtn.classList.toggle('active', running); });
-el('stopBtn').addEventListener('click', function() { running = false; gaugePercent = 0; sendRun(false); sendSpeed(); updateGauge(0, false, false); startBtn.textContent = 'START'; startBtn.classList.remove('active'); });
+startBtn.addEventListener('click', function() { 
+  running = !running; 
+  sendRun(running); 
+  startBtn.textContent = running ? 'RUNNING' : 'START'; 
+  startBtn.classList.toggle('active', running); 
+});
 
-// Explicit Web Bluetooth Connection Trigger
+el('stopBtn').addEventListener('click', function() { 
+  running = false; 
+  sendRun(false); 
+  startBtn.textContent = 'START'; 
+  startBtn.classList.remove('active'); 
+});
+
 el('connectBtn').addEventListener('click', async function() {
   errorBox.style.display = 'none';
 
   if (!navigator.bluetooth) {
-    errorBox.textContent = "Web Bluetooth is not supported by this browser or context. Please use Chrome/Edge over HTTPS or localhost.";
+    errorBox.textContent = "Web Bluetooth is not supported in this browser context.";
     errorBox.style.display = 'block';
     return;
   }
@@ -453,21 +463,35 @@ function onDisconnected() {
 }
 
 function handleStatusNotification(evt) {
-  if (Date.now() - lastLocalActionMs < LOCAL_ACTION_GRACE_MS) return;
-  const view = evt.target.value; if (view.byteLength < 6) return;
+  const view = evt.target.value;
+  if (!view || view.byteLength === 0) return;
+
   running = view.getUint8(0) === 1;
-  const speed = view.getUint8(1);
-  turboActiveConfirmed = view.getUint8(2) === 1;
-  driftActiveConfirmed = view.getUint8(3) === 1;
-  const volts = view.getUint16(4, true) / 100.0;
+  
+  if (view.byteLength >= 2) {
+    const speed = view.getUint8(1);
+    if (Date.now() - lastLocalActionMs >= LOCAL_ACTION_GRACE_MS) {
+      gaugePercent = speed;
+      updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed);
+    }
+  }
+
+  if (view.byteLength >= 3) turboActiveConfirmed = view.getUint8(2) === 1;
+  if (view.byteLength >= 4) driftActiveConfirmed = view.getUint8(3) === 1;
+
+  let volts = 18.0;
+  if (view.byteLength >= 6) {
+    const raw = view.getUint16(4, true);
+    volts = raw > 100 ? raw / 100.0 : raw;
+  }
+  
   const flags = view.byteLength >= 7 ? view.getUint8(6) : 0;
 
-  gaugePercent = speed;
   startBtn.textContent = running ? 'RUNNING' : 'START';
   startBtn.classList.toggle('active', running);
-  updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed);
   updateBatteryUI(volts, (flags & 1) !== 0, (flags & 2) !== 0);
 }
 </script>
+
 </body>
 </html>
