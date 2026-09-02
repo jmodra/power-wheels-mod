@@ -177,7 +177,16 @@
 </div>
 
 <script>
-// BLE identifiers
+// Global Error Catch to reveal any silent initialization crashes
+window.onerror = function(msg, url, line) {
+  const err = document.getElementById('errorBox');
+  if (err) {
+    err.textContent = "JS Error Line " + line + ": " + msg;
+    err.style.display = 'block';
+  }
+};
+
+// BLE UUID Constants
 const DEVICE_NAME       = "PowerWheels-Ctrl";
 const SERVICE_UUID      = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const SPEED_CHAR_UUID   = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -237,7 +246,7 @@ const turboBtn = el('turboBtn'), turboToggle = el('turboToggle');
 const driftBtn = el('driftBtn'), driftToggle = el('driftToggle');
 const battVolts = el('battVolts'), battFill = el('battFill'), battMsg = el('battMsg');
 
-// Gauge rendering
+// Gauge SVG rendering
 const NORMAL_STEPS = 20, TURBO_STEPS = 10;
 function polar(cx, cy, r, angleDeg) { const a = (angleDeg - 180) * Math.PI / 180; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; }
 function pctToAngle(pct) { return (pct / GAUGE_MAX) * 180; }
@@ -260,6 +269,7 @@ function buildGauge() {
   svg.innerHTML = html;
   svg.dataset.cx = cx; svg.dataset.cy = cy; svg.dataset.rOuter = rOuter;
 }
+
 function updateGauge(percent, turboOn, driftOn) {
   const svg = el('gaugeSvg'); const cx = +svg.dataset.cx, cy = +svg.dataset.cy, rOuter = +svg.dataset.rOuter;
   const angle = pctToAngle(percent);
@@ -278,7 +288,9 @@ function updateGauge(percent, turboOn, driftOn) {
   gaugeValue.classList.toggle('drift', driftOn);
   gaugeVolts.textContent = driftOn ? 'pulsing' : ('≈' + estimateVoltage(percent, turboOn).toFixed(1) + 'V');
 }
-buildGauge(); updateGauge(0, false, false);
+
+buildGauge(); 
+updateGauge(0, false, false);
 
 function angleFromPointer(evt) {
   const svg = el('gaugeSvg'); const rect = svg.getBoundingClientRect();
@@ -310,7 +322,6 @@ function updateBatteryUI(volts, lowFlag, cutoffFlag) {
   driftToggle.disabled = !running || lowFlag;
 }
 
-// Drift Config UI Handling
 function refreshDriftConfigUI() {
   el('onMsVal').textContent = driftConfig.onMs;
   el('offMsVal').textContent = driftConfig.offMs;
@@ -318,4 +329,145 @@ function refreshDriftConfigUI() {
   el('offPctVal').textContent = driftConfig.offPct + '%';
 }
 
-document.querySele
+document.querySelectorAll('.mini-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const key = btn.dataset.adj;
+    const delta = parseInt(btn.dataset.delta, 10);
+    if (key === 'onMs' || key === 'offMs') {
+      driftConfig[key] = Math.max(25, Math.min(1000, driftConfig[key] + delta));
+    } else if (key === 'onPct' || key === 'offPct') {
+      driftConfig[key] = Math.max(0, Math.min(150, driftConfig[key] + delta));
+    }
+    refreshDriftConfigUI();
+    sendDriftConfig();
+  });
+});
+
+function evaluateTurbo() {
+  const desired = turboSources.toggle || turboSources.button;
+  if (desired) {
+    if (!turboRefreshTimer) {
+      sendTurbo(true);
+      turboRefreshTimer = setInterval(function() { sendTurbo(true); }, REFRESH_MS);
+    }
+  } else {
+    if (turboRefreshTimer) { clearInterval(turboRefreshTimer); turboRefreshTimer = null; }
+    sendTurbo(false);
+  }
+}
+
+function evaluateDrift() {
+  const desired = driftSources.toggle || driftSources.button;
+  if (desired) {
+    if (!driftRefreshTimer) {
+      sendDrift(true);
+      driftRefreshTimer = setInterval(function() { sendDrift(true); }, REFRESH_MS);
+    }
+  } else {
+    if (driftRefreshTimer) { clearInterval(driftRefreshTimer); driftRefreshTimer = null; }
+    sendDrift(false);
+  }
+}
+
+turboToggle.addEventListener('change', function(e) { turboSources.toggle = e.target.checked; evaluateTurbo(); });
+['pointerdown', 'touchstart'].forEach(function(evt) {
+  turboBtn.addEventListener(evt, function(e) { e.preventDefault(); turboSources.button = true; turboBtn.classList.add('engaged'); evaluateTurbo(); });
+});
+['pointerup', 'pointercancel', 'touchend'].forEach(function(evt) {
+  turboBtn.addEventListener(evt, function(e) { e.preventDefault(); turboSources.button = false; turboBtn.classList.remove('engaged'); evaluateTurbo(); });
+});
+
+driftToggle.addEventListener('change', function(e) { driftSources.toggle = e.target.checked; evaluateDrift(); });
+['pointerdown', 'touchstart'].forEach(function(evt) {
+  driftBtn.addEventListener(evt, function(e) { e.preventDefault(); driftSources.button = true; driftBtn.classList.add('engaged'); evaluateDrift(); });
+});
+['pointerup', 'pointercancel', 'touchend'].forEach(function(evt) {
+  driftBtn.addEventListener(evt, function(e) { e.preventDefault(); driftSources.button = false; driftBtn.classList.remove('engaged'); evaluateDrift(); });
+});
+
+function sendSpeed() { lastLocalActionMs = Date.now(); return enqueueWrite(speedChar, new Uint8Array([gaugePercent])); }
+function sendRun(st) { lastLocalActionMs = Date.now(); return enqueueWrite(runChar, new Uint8Array([st ? 1 : 0])); }
+function sendTurbo(st) { lastLocalActionMs = Date.now(); return enqueueWrite(turboChar, new Uint8Array([st ? 1 : 0])); }
+function sendDrift(st) { lastLocalActionMs = Date.now(); return enqueueWrite(driftChar, new Uint8Array([st ? 1 : 0])); }
+function sendDriftConfig() {
+  const buf = new ArrayBuffer(6); const view = new DataView(buf);
+  view.setUint16(0, driftConfig.onMs, true); view.setUint16(2, driftConfig.offMs, true);
+  view.setUint8(4, driftConfig.onPct); view.setUint8(5, driftConfig.offPct);
+  return enqueueWrite(driftConfigChar, buf);
+}
+
+startBtn.addEventListener('click', function() { running = !running; sendRun(running); startBtn.textContent = running ? 'RUNNING' : 'START'; startBtn.classList.toggle('active', running); });
+el('stopBtn').addEventListener('click', function() { running = false; gaugePercent = 0; sendRun(false); sendSpeed(); updateGauge(0, false, false); startBtn.textContent = 'START'; startBtn.classList.remove('active'); });
+
+// Explicit Web Bluetooth Connection Trigger
+el('connectBtn').addEventListener('click', async function() {
+  errorBox.style.display = 'none';
+
+  if (!navigator.bluetooth) {
+    errorBox.textContent = "Web Bluetooth is not supported by this browser or context. Please use Chrome/Edge over HTTPS or localhost.";
+    errorBox.style.display = 'block';
+    return;
+  }
+
+  try {
+    statusText.textContent = "Searching...";
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ name: DEVICE_NAME }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+    statusText.textContent = "Connecting...";
+
+    const server = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+
+    speedChar       = await service.getCharacteristic(SPEED_CHAR_UUID);
+    runChar         = await service.getCharacteristic(RUN_CHAR_UUID);
+    statusChar      = await service.getCharacteristic(STATUS_CHAR_UUID);
+    turboChar       = await service.getCharacteristic(TURBO_CHAR_UUID);
+    driftChar       = await service.getCharacteristic(DRIFT_CHAR_UUID);
+    driftConfigChar = await service.getCharacteristic(DRIFT_CONFIG_UUID);
+
+    await statusChar.startNotifications();
+    statusChar.addEventListener('characteristicvaluechanged', handleStatusNotification);
+
+    statusDot.classList.add('connected');
+    statusText.textContent = "Connected";
+    connectView.style.display = 'none';
+    controlView.style.display = 'flex';
+  } catch (err) {
+    statusText.textContent = "Disconnected";
+    errorBox.textContent = "Bluetooth Error: " + (err.message || err);
+    errorBox.style.display = 'block';
+  }
+});
+
+function onDisconnected() {
+  statusDot.classList.remove('connected');
+  statusText.textContent = "Disconnected";
+  connectView.style.display = 'flex';
+  controlView.style.display = 'none';
+  if (turboRefreshTimer) clearInterval(turboRefreshTimer);
+  if (driftRefreshTimer) clearInterval(driftRefreshTimer);
+}
+
+function handleStatusNotification(evt) {
+  if (Date.now() - lastLocalActionMs < LOCAL_ACTION_GRACE_MS) return;
+  const view = evt.target.value; if (view.byteLength < 6) return;
+  running = view.getUint8(0) === 1;
+  const speed = view.getUint8(1);
+  turboActiveConfirmed = view.getUint8(2) === 1;
+  driftActiveConfirmed = view.getUint8(3) === 1;
+  const volts = view.getUint16(4, true) / 100.0;
+  const flags = view.byteLength >= 7 ? view.getUint8(6) : 0;
+
+  gaugePercent = speed;
+  startBtn.textContent = running ? 'RUNNING' : 'START';
+  startBtn.classList.toggle('active', running);
+  updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed);
+  updateBatteryUI(volts, (flags & 1) !== 0, (flags & 2) !== 0);
+}
+</script>
+</body>
+</html>
