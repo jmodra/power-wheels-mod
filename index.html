@@ -223,6 +223,7 @@ const connectView = el('connectView'), controlView = el('controlView');
 const statusDot = el('statusDot'), statusText = el('statusText'), errorBox = el('errorBox');
 const gaugeValue = el('gaugeValue'), gaugeVolts = el('gaugeVolts');
 const startBtn = el('startBtn');
+const stopBtn = el('stopBtn');
 const turboBtn = el('turboBtn'), turboToggle = el('turboToggle');
 const driftBtn = el('driftBtn'), driftToggle = el('driftToggle');
 const battVolts = el('battVolts'), battFill = el('battFill'), battMsg = el('battMsg');
@@ -424,6 +425,7 @@ function handleStatusValue(dataView) {
   if (notifyRunning === desiredRunning && runRetryTimer) {
     clearInterval(runRetryTimer);
     runRetryTimer = null;
+    if (desiredRunning === false) stopBtn.textContent = 'STOP';
   }
 
   updateGauge(gaugePercent, turboActiveConfirmed, driftActiveConfirmed);
@@ -459,16 +461,26 @@ function requestRunState(state) {
   running = state; // optimistic UI
   lastLocalActionMs = Date.now();
   setRunUI(state);
+  if (state === false) stopBtn.textContent = 'STOP';
   sendRun(state);
 
   runRetryAttempts = 0;
   if (runRetryTimer) clearInterval(runRetryTimer);
   runRetryTimer = setInterval(() => {
     runRetryAttempts++;
-    if (runRetryAttempts > RUN_RETRY_MAX_ATTEMPTS) {
+    // Asymmetric on purpose: failing to CONFIRM a start is safe to give up
+    // on (car just stays stopped, the safe default). Failing to confirm a
+    // STOP is the dangerous direction - never silently abandon that one,
+    // keep retrying until it's actually confirmed.
+    if (state === true && runRetryAttempts > RUN_RETRY_MAX_ATTEMPTS) {
       clearInterval(runRetryTimer);
       runRetryTimer = null;
       return;
+    }
+    if (state === false && runRetryAttempts === RUN_RETRY_MAX_ATTEMPTS + 1) {
+      // Still hasn't confirmed after the normal window - surface that
+      // instead of silently continuing to retry with no visibility.
+      stopBtn.textContent = 'STOP (confirming...)';
     }
     sendRun(desiredRunning);
   }, RUN_RETRY_INTERVAL_MS);
