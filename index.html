@@ -203,7 +203,7 @@ function estimateVoltage(percent, turboOn) {
 }
 
 let bleDevice, speedChar, runChar, statusChar, turboChar, driftChar, driftConfigChar;
-let gaugePercent = 0, running = false;
+let gaugePercent = 100, running = true; // matches firmware boot defaults, avoids a flash of the wrong state pre-connect
 let lastLocalActionMs = 0;
 const LOCAL_ACTION_GRACE_MS = 500;
 let desiredRunning = false;
@@ -292,14 +292,16 @@ function updateBatteryUI(volts, lowFlag, cutoffFlag) {
   battVolts.textContent = volts.toFixed(1) + 'V';
   const pct = Math.max(0, Math.min(100, ((volts - BATT_BAR_MIN) / (BATT_BAR_MAX - BATT_BAR_MIN)) * 100));
   battFill.style.width = pct + '%';
-  if (cutoffFlag) { battFill.style.background = 'var(--red)'; battMsg.textContent = 'CRITICAL — stopped to protect the pack'; battMsg.style.color = 'var(--red)'; }
-  else if (lowFlag) { battFill.style.background = 'var(--amber)'; battMsg.textContent = 'LOW — turbo & drift locked out'; battMsg.style.color = 'var(--amber)'; }
+  // Informational only - the Ryobi pack's own BMS handles real protection,
+  // so this no longer disables turbo/drift. Just a heads-up indicator.
+  if (cutoffFlag) { battFill.style.background = 'var(--red)'; battMsg.textContent = 'LOW — check the pack'; battMsg.style.color = 'var(--red)'; }
+  else if (lowFlag) { battFill.style.background = 'var(--amber)'; battMsg.textContent = 'Getting low'; battMsg.style.color = 'var(--amber)'; }
   else { battFill.style.background = 'var(--green)'; battMsg.textContent = 'OK'; battMsg.style.color = 'var(--muted)'; }
 
-  turboBtn.disabled = !running || lowFlag;
-  turboToggle.disabled = !running || lowFlag;
-  driftBtn.disabled = !running || lowFlag;
-  driftToggle.disabled = !running || lowFlag;
+  turboBtn.disabled = !running;
+  turboToggle.disabled = !running;
+  driftBtn.disabled = !running;
+  driftToggle.disabled = !running;
 }
 
 // ---------------- Drift config UI ----------------
